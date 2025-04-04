@@ -25,7 +25,8 @@
     "pg": "^8.14.1",
     "pg-hstore": "^2.3.4",
     "rate-limit-redis": "^4.2.0",
-    "sequelize": "^6.37.7"
+    "sequelize": "^6.37.7",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"

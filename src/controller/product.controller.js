@@ -2,7 +2,7 @@ import Image from "../models/image.model.js";
 import Product from "../models/product.model.js";
 import { uploadOnCloud } from "../utility/cloudinary.js";
 import cloudinary from "cloudinary";
-
+import redisClient from "../config/redis.js";
 import sequelize from "../db/index.js"; // Sequelize instance
 
 const addProduct = async (req, res) => {
@@ -49,6 +49,7 @@ const addProduct = async (req, res) => {
 
         // Commit transaction
         await transaction.commit();
+        await redisClient.del(`allProducts`);
         return res.status(201).json({ message: "Product added successfully", product });
 
     } catch (error) {
@@ -61,23 +62,38 @@ const addProduct = async (req, res) => {
     }
 };
 
-const getAllProducts = async (req,res)=>{
+const getAllProducts = async (req, res) => {
     try {
+        const cachedProducts = await redisClient.get("allProducts");
+        if (cachedProducts) {
+            return res.status(200).json({ message: "Products fetched from cache", products: JSON.parse(cachedProducts) });
+        }
 
-        const products = await Product.findAll()
-        return res.status(201).json({ message: "Product fetched successfully", products });
+        const products = await Product.findAll();
+
+        await redisClient.set("allProducts", JSON.stringify(products), "EX", 600);
+
+        return res.status(200).json({ message: "Products fetched successfully", products });
+
     } catch (error) {
-        console.error("Error fetching product:", error);
+        console.error("Error fetching products:", error);
         return res.status(500).json({ error: "Internal Server Error" });
     }
-
-}
+};
 
 const getProductById = async (req, res) => {
     try {
         const productId = req.params.id;
+
+        const cachedProduct = await redisClient.get(`product:${productId}`);
+        if (cachedProduct) {
+            return res.status(200).json({ message: "Product fetched from cache", product: JSON.parse(cachedProduct) });
+        }
+
         const product = await Product.findByPk(productId);
         if (!product) return res.status(404).json({ error: "Product not found" });
+
+        await redisClient.set(`product:${productId}`, JSON.stringify(product), "EX", 3600);
 
         return res.status(200).json({ message: "Product fetched successfully", product });
 
@@ -86,6 +102,7 @@ const getProductById = async (req, res) => {
         return res.status(500).json({ error: "Internal Server Error" });
     }
 };
+
 const updateProduct = async (req, res) => {
     const transaction = await sequelize.transaction(); // Start transaction
 
@@ -149,6 +166,12 @@ const updateProduct = async (req, res) => {
         }
 
         await transaction.commit();
+        await redisClient.del(`allProducts`);
+        await redisClient.del(`product:${productId}`);
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
         return res.status(200).json({ message: "Product updated successfully" });
 
     } catch (error) {
@@ -187,6 +210,12 @@ const deleteProduct = async (req, res) => {
         // Commit transaction
         await transaction.commit();
 
+        await redisClient.del(`allProducts`);
+        await redisClient.del(`product:${productId}`)
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
         return res.status(200).json({ message: "Product deleted successfully" });
 
     } catch (error) {

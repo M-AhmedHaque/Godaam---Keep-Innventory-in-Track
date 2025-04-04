@@ -25,4 +25,37 @@ const StockMovement = sequelize.define("StockMovement", {
   notes: { type: DataTypes.TEXT } // Can be used for return reasons
 }, { timestamps: true })
 
+StockMovement.addHook("afterCreate", async (stockMovement, options) => {
+  await AuditLog.create({
+    entity_type: "StockMovement",
+    entity_id: stockMovement.id,
+    action: "CREATE",
+    user_id: stockMovement.user_id,
+    new_value: stockMovement.toJSON(),
+  });
+});
+
+StockMovement.addHook("beforeUpdate", async (stockMovement, options) => {
+  const oldStock = await StockMovement.findByPk(stockMovement.id);
+  await AuditLog.create({
+    entity_type: "StockMovement",
+    entity_id: stockMovement.id,
+    action: "UPDATE",
+    user_id: stockMovement.user_id,
+    old_value: oldStock.toJSON(),
+    new_value: stockMovement.toJSON(),
+  });
+});
+
+StockMovement.addHook("beforeDestroy", async (stockMovement, options) => {
+  await AuditLog.create({
+    entity_type: "StockMovement",
+    entity_id: stockMovement.id,
+    action: "DELETE",
+    user_id: stockMovement.user_id,
+    old_value: stockMovement.toJSON(),
+  });
+});
+
+
   export default StockMovement

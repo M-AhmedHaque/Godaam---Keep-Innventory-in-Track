@@ -1,3 +1,18 @@
+const AuditLog = sequelize.define("AuditLog", {
+  id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
+  entity_type: { type: DataTypes.STRING, allowNull: false }, // e.g., 'StockMovement'
+  entity_id: { type: DataTypes.INTEGER, allowNull: false },  // ID of the affected record
+  action: { type: DataTypes.ENUM("CREATE", "UPDATE", "DELETE"), allowNull: false },
+  user_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: User, key: "id" }, onDelete: "CASCADE" },
+  old_value: { type: DataTypes.JSON }, // Stores previous state
+  new_value: { type: DataTypes.JSON }, // Stores updated state
+  timestamp: { type: DataTypes.DATE, defaultValue: Sequelize.NOW }
+}, { timestamps: false });
+
+User.hasMany(AuditLog, { foreignKey: "user_id", onDelete: "CASCADE" });
+AuditLog.belongsTo(User, { foreignKey: "user_id" });
+
+
 const Image = sequelize.define("Image", {
   id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
   product_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Product, key: "id" }, onDelete: "CASCADE" },

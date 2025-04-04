@@ -66,6 +66,10 @@ const updateStore = async (req, res) => {
         store.name = name || store.name;
         store.address = address || store.address;
         await store.save();
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
         return res.status(200).json({ message: "Store updated successfully.", store });
     } catch (error) {
         console.error("Error updating store:", error);
@@ -89,6 +93,10 @@ const deleteStore = async (req, res) => {
         await store.destroy({ transaction });
         // await store.destroy({ transaction });
         await transaction.commit();
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
         return res.status(200).json({ message: "Store deleted successfully." });
     } catch (error) {
         await transaction.rollback();

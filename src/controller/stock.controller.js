@@ -4,6 +4,51 @@ import StockMovement from "../models/stockMovement.model.js";
 import Store from "../models/store.model.js";
 import Product from "../models/product.model.js";
 import sequelize from "../db/index.js";
+import redisClient from "../config/redis.js";
+
+// Utility function to invalidate cache
+const invalidateCache = (key) => {
+    redisClient.del(key, (err, response) => {
+        if (err) console.error("Redis Cache Invalidation Error:", err);
+    });
+};
+
+const handleStockMovement = async (data) => {
+    const { product_id, store_id, supplier_id, quantity, movement_type } = data;
+
+    let stock = await StoreStock.findOne({ where: { product_id, store_id, supplier_id } });
+
+    if (!stock) {
+        stock = await StoreStock.create({ product_id, store_id, supplier_id, quantity: 0, selling_price: 0, total_stock: 0 });
+    }
+
+    // Update stock based on movement type
+    if (movement_type === "stock_in") {
+        stock.quantity += quantity;
+        stock.total_stock += quantity;
+    } else if (movement_type === "sale") {
+        stock.quantity -= quantity;
+        stock.total_stock -= quantity;
+    } else if (movement_type === "removal") {
+        stock.quantity -= quantity;
+    } else if (movement_type === "return_to_supplier") {
+        stock.quantity -= quantity;
+    }
+
+    await stock.save();
+
+    // Log stock movement
+    await StockMovement.create({
+        product_id,
+        store_id,
+        supplier_id,
+        quantity,
+        movement_type,
+        movement_date: new Date(),
+    });
+
+    return { product_id, store_id, supplier_id, quantity, movement_type, updated_quantity: stock.quantity };
+};
 
 // Add stock to a store
 const addStock = async (req, res) => {
@@ -37,11 +82,12 @@ const addStock = async (req, res) => {
             product_id, store_id, supplier_id, user_id,
             quantity, movement_type: "stock_in",
             movement_date: new Date(),
-            purchase_price, // ✅ Now tracking purchase price
+            purchase_price, //  Now tracking purchase price
             notes
         }, { transaction });
 
         await transaction.commit();
+        invalidateCache("stockMovements");
         res.status(201).json({ success: true, message: "Stock added successfully", data: stock });
 
     } catch (error) {
@@ -56,7 +102,6 @@ const saleStock = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { store_id, product_id, quantity, user_id, notes } = req.body;
-
         const stock = await StoreStock.findOne({ where: { store_id, product_id }, transaction });
         if (!stock || stock.quantity < quantity) {
             return res.status(400).json({ success: false, message: "Insufficient stock" });
@@ -84,6 +129,7 @@ const saleStock = async (req, res) => {
         }, { transaction });
 
         await transaction.commit();
+        invalidateCache("stockMovements");
         res.status(200).json({ success: true, message: "Sale recorded successfully", data: stock });
 
     } catch (error) {
@@ -121,7 +167,7 @@ const removeStock = async (req, res) => {
             product_id, store_id, user_id,
             quantity, movement_type: "removal",
             movement_date: new Date(),
-            purchase_price, // ✅ Now tracking purchase price for loss calculations
+            purchase_price,  
             notes
         }, { transaction });
 
@@ -137,6 +183,12 @@ const removeStock = async (req, res) => {
 const getStockMovements = async (req, res) => {
     try {
         const { store_id, product_id, movement_type } = req.query;
+        const cacheKey = `stockMovements:${store_id || 'all'}:${product_id || 'all'}:${movement_type || 'all'}`;
+        const cachedData = await redisClient.get(cacheKey);
+        if (cachedData) {
+            return res.status(200).json({ success: true, data: JSON.parse(cachedData) });
+        }
+        
         const whereClause = {};
 
         if (store_id) whereClause.store_id = store_id;
@@ -147,7 +199,7 @@ const getStockMovements = async (req, res) => {
             where: whereClause,
             include: [{ model: Product, attributes: ["name"] }, { model: Store, attributes: ["name"] }]
         });
-
+        redisClient.setex(cacheKey, 300, JSON.stringify(movements));
         res.status(200).json({ success: true, data: movements });
 
     } catch (error) {
@@ -188,12 +240,12 @@ const returnStockToSupplier = async (req, res) => {
             product_id: productId,
             store_id: storeId,
             supplier_id: supplierId,
-            user_id: userId, // ✅ Passed from request now
+            user_id: userId,  
             quantity,
             movement_type: "return_to_supplier",
             movement_date: new Date(),
-            purchase_price, // ✅ Track actual purchase price
-            notes: reason, // ✅ Store return reason
+            purchase_price,  
+            notes: reason,  
         }, { transaction });
 
         // Update stock quantity
@@ -211,185 +263,4 @@ const returnStockToSupplier = async (req, res) => {
 };
 
 
-export {addStock,saleStock,removeStock,getStockMovements,returnStockToSupplier}
-
-// //  Get Stock Levels for a Store
-// const getStoreStock = async (req, res) => {
-//     try {
-//         const { storeId } = req.params;
-//         const stock = await StoreStock.findAll({
-//             where: { store_id: storeId },
-//             include: [{ model: Product, attributes: ["id", "name", "description", "status"] }]
-//         });
-
-//         return res.json(stock);
-//     } catch (error) {
-//         return res.status(500).json({ message: "Error fetching store stock", error: error.message });
-//     }
-// };
-
-// Get Stock Details for a Specific Product in a Store
-// const getStockDetails = async (req, res) => {
-//     try {
-//         const { storeId, productId } = req.params;
-//         const stock = await StoreStock.findOne({
-//             where: { store_id: storeId, product_id: productId },
-//             include: [{ model: Product, attributes: ["id", "name", "description", "status"] }]
-//         });
-
-//         if (!stock) return res.status(404).json({ message: "Stock record not found" });
-
-//         return res.json(stock);
-//     } catch (error) {
-//         return res.status(500).json({ message: "Error fetching stock details", error: error.message });
-//     }
-// };
-
-
-
-//Update Stock Levels (Quantity, Selling Price)
-// const updateStock = async (req, res) => {
-//     try {
-//         const { storeId, productId } = req.params;
-//         const { quantity, selling_price } = req.body;
-
-//         const stock = await StoreStock.findOne({ where: { store_id: storeId, product_id: productId } });
-
-//         if (!stock) return res.status(404).json({ message: "Stock record not found" });
-
-//         stock.quantity = quantity;
-//         stock.selling_price = selling_price;
-//         stock.last_updated = new Date();
-
-//         await stock.save();
-
-//         return res.json({ message: "Stock updated successfully", stock });
-//     } catch (error) {
-//         return res.status(500).json({ message: "Error updating stock", error: error.message });
-//     }
-// };
-
-
-// // ✅ 4. Record Stock Movement (Stock In, Sale, Removal)
-// const recordStockMovement = async (req, res) => {
-//     try {
-//         const { product_id, store_id, supplier_id, user_id, quantity, movement_type, notes } = req.body;
-
-//         // Validate movement type
-//         if (!["stock_in", "sale", "removal"].includes(movement_type)) {
-//             return res.status(400).json({ message: "Invalid movement type" });
-//         }
-
-//         // Get the stock record
-//         let stock = await StoreStock.findOne({ where: { store_id, product_id } });
-
-//         if (!stock) return res.status(404).json({ message: "Stock record not found" });
-
-//         // Adjust stock based on movement type
-//         if (movement_type === "stock_in") {
-//             stock.quantity += quantity;
-//             stock.total_stock += quantity;
-//         } else if (movement_type === "sale" || movement_type === "removal") {
-//             if (stock.quantity < quantity) return res.status(400).json({ message: "Not enough stock available" });
-
-//             stock.quantity -= quantity;
-//             stock.total_stock -= quantity;
-//         }
-
-//         // Update stock record
-//         stock.last_updated = new Date();
-//         await stock.save();
-
-//         // Create a stock movement entry
-//         await StockMovement.create({
-//             product_id,
-//             store_id,
-//             supplier_id,
-//             user_id,
-//             quantity,
-//             movement_type,
-//             notes
-//         });
-
-//         return res.json({ message: "Stock movement recorded successfully" });
-//     } catch (error) {
-//         return res.status(500).json({ message: "Error recording stock movement", error: error.message });
-//     }
-// };
-// Get stock movements with filters (by store, product, or movement type)
-
-
-// export {getStockDetails,getStoreStock,getStockMovements,recordStockMovement,updateStock}
-
-// import Stock from "../models/store_stock.model.js";
-// import Product from "../models/product.model.js";
-
-// const getCurrentStock = async (productId) => {
-//     const stockMovements = await Stock.findAll({ where: { product_id: productId } });
-//     return stockMovements.reduce(
-//         (sum, item) => sum + (item.movement_type === "BUY" ? item.quantity : -item.quantity),
-//         0
-//     );
-// };
-
-// const buyStock = async(req,res)=>{
-//     const { quantity } = req.body;
-//     const productId = req.params.id;
-
-//     if (!quantity || quantity <= 0) {
-//         return res.status(400).json({ error: "Invalid quantity" });
-//     }
-
-//     // Ensure product exists
-//     const product = await Product.findByPk(productId);
-//     if (!product) {
-//         return res.status(404).json({ error: "Product not found" });
-//     }
-
-//     // Add stock
-//     await Stock.create({ product_id: productId, quantity, movement_type: "BUY" });
-//     res.json({ message: `Added ${quantity} units to stock` });
-// }
-
-// const sellStock = async(req,res)=>{
-//     const { quantity } = req.body;
-//     const productId = req.params.id;
-
-//     if (!quantity || quantity <= 0) {
-//         return res.status(400).json({ error: "Invalid quantity" });
-//     }
-
-//     // Ensure product exists
-//     const product = await Product.findByPk(productId);
-//     if (!product) {
-//         return res.status(404).json({ error: "Product not found" });
-//     }
-
-//     // Check if enough stock is available
-//     const currentStock = await getCurrentStock(productId);
-//     if (currentStock < quantity) {
-//         return res.status(400).json({ error: "Not enough stock available" });
-//     }
-
-//     // Deduct stock
-//     await Stock.create({ product_id: productId, quantity, movement_type: "SELL" });
-//     res.json({ message: `Sold ${quantity} units` });
-// }
-// const getInventory = async(req,res)=>{
-//     const productId = req.params.id;
-
-//     // Ensure product exists
-//     const product = await Product.findByPk(productId);
-//     if (!product) {
-//         return res.status(404).json({ error: "Product not found" });
-//     }
-
-//     const totalStock = await getCurrentStock(productId);
-//     res.json({ productId, totalStock });
-// }
-
-// export {
-//     buyStock,
-//     sellStock,
-//     getInventory
-// }
+export {addStock,saleStock,removeStock,getStockMovements,returnStockToSupplier,handleStockMovement}

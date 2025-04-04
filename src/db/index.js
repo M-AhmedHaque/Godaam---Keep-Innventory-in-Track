@@ -3,10 +3,34 @@ import Sequelize from "sequelize";
 import dotenv from "dotenv";
 
 dotenv.config();
-const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
-  host: "localhost",
-  dialect: "postgres",
-  logging: false,
+// const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
+//   host: "localhost",
+//   dialect: "postgres",
+//   logging: false,
+// });
+const sequelize = new Sequelize({
+  dialect: 'postgres',
+  replication: {
+    read: [
+      {
+        host: 'localhost', // same host
+        username: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME, // same DB
+      },
+    ],
+    write: {
+        host: 'localhost', // same host
+        username: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME, // same DB
+    },
+  },
+  pool: {
+    max: 10,
+    idle: 30000,
+  },
+  logging: console.log, // shows which operations go to which side
 });
 
 sequelize

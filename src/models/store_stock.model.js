@@ -19,5 +19,19 @@ const StoreStock = sequelize.define("StoreStock", {
   total_stock: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   last_updated: { type: DataTypes.DATE, defaultValue: Sequelize.NOW }
 }, { timestamps: false });
+StoreStock.addHook("beforeUpdate", async (storeStock) => {
+  const oldStock = await StoreStock.findOne({
+    where: { product_id: storeStock.product_id, store_id: storeStock.store_id },
+  });
+
+  await AuditLog.create({
+    entity_type: "StoreStock",
+    entity_id: storeStock.product_id,
+    action: "UPDATE",
+    user_id: 1, // Assign dynamically
+    old_value: oldStock.toJSON(),
+    new_value: storeStock.toJSON(),
+  });
+});
 
 export default StoreStock

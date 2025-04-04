@@ -6,7 +6,7 @@ const redisClient = new Redis({
   // password: "your-redis-password", // Uncomment if Redis requires authentication
 });
 
-redisClient.on("connect", () => console.log("✅ Connected to Redis!"));
-redisClient.on("error", (err) => console.error("❌ Redis Error:", err));
+redisClient.on("connect", () => console.log("Connected to Redis!"));
+redisClient.on("error", (err) => console.error("Redis Error:", err));
 
 export default redisClient;

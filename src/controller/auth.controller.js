@@ -52,6 +52,10 @@ const login = async (req, res) => {
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
 
+        // store user data in cache 
+        // Store session in Redis (Key: "session:userID", Value: JSON.stringify(user data))
+        await redisClient.set(`session:${user.id}`, JSON.stringify(user), "EX", 3600); // Expires in 1 hour
+
         // Store refresh token in HTTP-Only Cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
@@ -86,6 +90,7 @@ const refreshToken = async (req, res) => {
 };
 
 const logout = async (req, res) => {
+    await redisClient.del(`session:${req.user.id}`);
     res.clearCookie("refreshToken", { httpOnly: true, sameSite: "Strict" });
     res.status(200).json({ message: "Logged out successfully" });
 };

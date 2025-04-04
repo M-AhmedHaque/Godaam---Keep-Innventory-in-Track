@@ -9,11 +9,26 @@ export const verifyJWT = async (req, res, next) => {
         }
 
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        req.user = await User.findByPk(decoded.id, { attributes: { exclude: ["password"] } });
+        const userId = decoded.id;
+        const userSession = await redisClient.get(`session:${userId}`);
+        if (userSession) {
+            req.user = JSON.parse(userSession); // Use cached session data
+        } else {
+            // If not found in Redis, fetch from DB and store in Redis
+            const user = await User.findByPk(userId, { attributes: { exclude: ["password"] } });
 
-        if (!req.user) {
-            return res.status(404).json({ success: false, message: "User not found" });
+            if (!user) {
+                return res.status(404).json({ success: false, message: "User not found" });
+            }
+
+            await redisClient.set(`session:${userId}`, JSON.stringify(user), "EX", 3600); // Cache for 1 hour
+            req.user = user;
         }
+        // req.user = await User.findByPk(decoded.id, { attributes: { exclude: ["password"] } });
+
+        // if (!req.user) {
+        //     return res.status(404).json({ success: false, message: "User not found" });
+        // }
 
         next();
     } catch (error) {

@@ -8,6 +8,10 @@ import StockMovement from "./stockMovement.model.js";
 import Image from "./image.model.js";
 import SupplierProduct from "./supplier_product.js";
 import Supplier from "./supplier.model.js";
+import AuditLog from "./auditLog.model.js";
+
+User.hasMany(AuditLog, { foreignKey: "user_id", onDelete: "CASCADE" });
+AuditLog.belongsTo(User, { foreignKey: "user_id" });
 
 // User.hasMany(Store, { foreignKey: "owner_id" });
 // Store.belongsTo(User, { foreignKey: "owner_id" });

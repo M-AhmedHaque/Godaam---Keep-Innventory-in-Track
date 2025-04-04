@@ -3,7 +3,14 @@ import sequelize from "../db/index.js";
   
 const getAllUsers = async(req,res)=>{
     try {
-        const users = await User.findAll()
+        let users = await redisClient.get("users:all");
+
+        if (users) {
+            console.log("Cache hit: Fetching users from Redis");
+            return res.status(200).json({ message: "Users fetched successfully", users: JSON.parse(users) });
+        }
+        users = await User.findAll()
+        await redisClient.set("users:all", JSON.stringify(users), "EX", 3600);
         return res.status(201).json({ message: "Users fetched successfully", users });
         
     } catch (error) {
@@ -15,7 +22,21 @@ const getAllUsers = async(req,res)=>{
 const getUsersById = async(req,res)=>{
     try {
         const userId = req.params.id
-        const user = await User.findOne({where:{id:userId}})
+        let user = await redisClient.get(`user:${userId}`);
+
+        if (user) {
+            console.log(`Cache hit: Fetching user ${userId} from Redis`);
+            return res.status(200).json({ message: "User fetched successfully", user: JSON.parse(user) });
+        }
+
+        // console.log(`Cache miss: Fetching user ${userId} from DB`);
+        user = await User.findOne({ where: { id: userId } })
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Store result in Redis for 1 hour
+        await redisClient.set(`user:${userId}`, JSON.stringify(user), "EX", 3600);
         return res.status(201).json({ message: "User fetched successfully", user });
         
     } catch (error) {
@@ -55,6 +76,15 @@ const updateUser = async (req, res) => {
         );
 
         await transaction.commit(); 
+
+        await redisClient.del(`user:${userId}`);
+        await redisClient.del("users:all");
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
+        //  current_stock:${JSON.stringify(req.query)} supplier_report:${JSON.stringify(req.query)} profit_sales:${JSON.stringify(req.query)}
+
         return res.status(200).json({ message: "User updated successfully" });
 
     } catch (error) {
@@ -77,6 +107,14 @@ const deleteUser = async (req, res) => {
         await User.destroy({ where: { id: userId }, transaction });
 
         await transaction.commit(); 
+
+        // Invalidate cache after deletion
+        await redisClient.del(`user:${userId}`);
+        await redisClient.del("users:all");
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
         return res.status(200).json({ message: "User deleted successfully" });
 
     } catch (error) {

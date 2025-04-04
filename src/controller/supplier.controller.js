@@ -2,6 +2,8 @@ import Product from "../models/product.model.js";
 import Supplier from "../models/supplier.model.js";
 import SupplierProduct from "../models/supplier_product.js";
 import sequelize from "../db/index.js";
+import redisClient from "../config/redis.js";
+const CACHE_EXPIRATION = 600;
 // add supplier
 const addSupplier = async (req, res) => {
     const transaction = await sequelize.transaction();
@@ -15,6 +17,7 @@ const addSupplier = async (req, res) => {
 
         // Check if supplier already exists by email (or any other unique field)
         const existingSupplier = await Supplier.findOne({ where: { email } }, { transaction });
+
         if (existingSupplier) {
             return res.status(400).json({ error: "Supplier with this email already exists." });
         }
@@ -28,6 +31,14 @@ const addSupplier = async (req, res) => {
         }
 
         await transaction.commit();
+        
+        await redisClient.del("suppliers:all");
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
+        
+
         return res.status(201).json({ message: "Supplier created successfully.", supplier });
     } catch (error) {
         await transaction.rollback();
@@ -58,6 +69,16 @@ const deleteSupplier = async (req, res) => {
         await supplier.destroy({ transaction });
 
         await transaction.commit();
+
+        await redisClient.del("suppliers:all");
+        await redisClient.del(`supplier:${supplierId}`);
+        await redisClient.del(`supplier:products:${supplierId}`);
+
+        await redisClient.del(`current_stock:${JSON.stringify(req.query)}`);
+        await redisClient.del(`stock_movements:${JSON.stringify(req.query)}`);
+        await redisClient.del(`supplier_report:${JSON.stringify(req.query)}`);
+        await redisClient.del(`profit_sales:${JSON.stringify(req.query)}`);
+
         return res.status(200).json({ message: "Supplier deleted successfully." });
     } catch (error) {
         await transaction.rollback();
@@ -70,8 +91,16 @@ const deleteSupplier = async (req, res) => {
 const getAllSuppliers = async (req, res) => {
     try {
         // Fetch all suppliers
-        const suppliers = await Supplier.findAll();
+        const cacheKey = "suppliers:all";
 
+        // Check cache first
+        const cachedSuppliers = await redisClient.get(cacheKey);
+        if (cachedSuppliers) {
+            return res.status(200).json({ message: "Suppliers fetched from cache.", suppliers: JSON.parse(cachedSuppliers) });
+        }
+
+        const suppliers = await Supplier.findAll();
+        await redisClient.set(cacheKey, JSON.stringify(suppliers), "EX", CACHE_EXPIRATION);
         return res.status(200).json({ message: "Suppliers fetched successfully.", suppliers });
     } catch (error) {
         console.error("Error fetching suppliers:", error);
@@ -106,6 +135,10 @@ const addSupplierToProduct = async (req, res) => {
         );
 
         await transaction.commit();
+
+        await redisClient.del(`product:suppliers:${productId}`);
+        await redisClient.del(`supplier:products:${supplierId}`);
+
         return res.status(201).json({ message: "Supplier added to product successfully." });
 
     } catch (error) {
@@ -118,6 +151,13 @@ const addSupplierToProduct = async (req, res) => {
 const getSuppliersForProduct = async (req, res) => {
     try {
         const productId = req.params.id;
+        const cacheKey = `product:suppliers:${productId}`;
+
+        // Check cache first
+        const cachedSuppliers = await redisClient.get(cacheKey);
+        if (cachedSuppliers) {
+            return res.status(200).json({ message: "Suppliers fetched from cache.", suppliers: JSON.parse(cachedSuppliers) });
+        }
 
         // Fetch the product along with its suppliers
         const product = await Product.findByPk(productId, {
@@ -127,7 +167,7 @@ const getSuppliersForProduct = async (req, res) => {
         if (!product) {
             return res.status(404).json({ error: "Product not found." });
         }
-
+        await redisClient.setex(cacheKey, CACHE_EXPIRATION, JSON.stringify(product.Suppliers));
         return res.status(200).json({ message: "Suppliers fetched successfully.", suppliers: product.Suppliers });
     } catch (error) {
         console.error("Error fetching suppliers for product:", error);
@@ -138,7 +178,13 @@ const getSuppliersForProduct = async (req, res) => {
 const getProductsBySupplier = async (req, res) => {
     try {
         const supplierId = req.params.id;
+        const cacheKey = `supplier:products:${supplierId}`;
 
+        // Check cache first
+        const cachedProducts = await redisClient.get(cacheKey);
+        if (cachedProducts) {
+            return res.status(200).json({ message: "Products fetched from cache.", products: JSON.parse(cachedProducts) });
+        }
         // Fetch the supplier along with its products
         const supplier = await Supplier.findByPk(supplierId, {
             include: { model: Product, through: { attributes: ['cost_price', 'status'] } }
@@ -147,7 +193,7 @@ const getProductsBySupplier = async (req, res) => {
         if (!supplier) {
             return res.status(404).json({ error: "Supplier not found." });
         }
-
+        await redisClient.setex(cacheKey, CACHE_EXPIRATION, JSON.stringify(supplier.Products));
         return res.status(200).json({ message: "Products fetched successfully.", products: supplier.Products });
     } catch (error) {
         console.error("Error fetching products for supplier:", error);
