@@ -12,12 +12,3 @@ router.get("/get-suppliers-for-product/:id", verifyJWT, authorizeRoles("admin", 
 router.get("/get-products-by-supplier/:id", verifyJWT, authorizeRoles("admin", "store_manager"),getProductsBySupplier) //this will get all the products of a supplier
 
 export default router
-// POST /api/suppliers → Admin adds a new supplier.
-
-// GET /api/suppliers → Both admin & store managers view suppliers.
-
-// GET /api/suppliers/:id → Retrieve supplier details.
-
-// PUT /api/suppliers/:id → Admin updates supplier details.
-
-// DELETE /api/suppliers/:id → Admin removes a supplier.

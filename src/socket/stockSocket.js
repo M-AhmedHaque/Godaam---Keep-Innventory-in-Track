@@ -6,10 +6,8 @@ export const stockSocket = (io) => {
         socket.on("stock_update", async (data) => {
             console.log("Stock update received:", data);
 
-            // Process stock movement in DB
             const updatedStock = await handleStockMovement(data);
 
-            // Notify all clients of stock change
             io.emit("stock_updated", updatedStock);
         });
 

@@ -19,14 +19,11 @@ const register = async (req, res) => {
             return res.status(400).json({ message: "Name, email, password and role are required fields." });   
         }
 
-        // Check if user already exists
         const existingUser = await User.findOne({ where: { email } });
         if (existingUser) return res.status(400).json({ message: "User already exists" });
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Create new user
         if(role == "admin"){
             store_id = null
         }
@@ -48,20 +45,17 @@ const login = async (req, res) => {
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) return res.status(401).json({ message: "Invalid email or password" });
 
-        // Generate tokens
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
 
-        // store user data in cache 
         // Store session in Redis (Key: "session:userID", Value: JSON.stringify(user data))
         await redisClient.set(`session:${user.id}`, JSON.stringify(user), "EX", 3600); // Expires in 1 hour
 
-        // Store refresh token in HTTP-Only Cookie
         res.cookie("refreshToken", refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "Strict",
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+            maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
         res.status(200).json({ user,accessToken,refreshToken });

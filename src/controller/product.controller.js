@@ -3,24 +3,21 @@ import Product from "../models/product.model.js";
 import { uploadOnCloud } from "../utility/cloudinary.js";
 import cloudinary from "cloudinary";
 import redisClient from "../config/redis.js";
-import sequelize from "../db/index.js"; // Sequelize instance
+import sequelize from "../db/index.js";
 
 const addProduct = async (req, res) => {
 
-    const transaction = await sequelize.transaction(); // Start transaction
+    const transaction = await sequelize.transaction();
 
     try {
         const { name, description } = req.body;
 
-        // Validate input
         if (!name || !description) {
             return res.status(400).json({ error: "All fields are required." });
         }
 
-        // Create a new product inside the transaction
         const product = await Product.create({ name, description }, { transaction });
 
-        // Handle image uploads
         if (req.files && req.files.length > 0) {
             const uploadedImages = [];
 
@@ -37,7 +34,6 @@ const addProduct = async (req, res) => {
                 } catch (uploadError) {
                     console.error("Cloudinary upload failed:", uploadError);
                     
-                    // Cleanup: Delete already uploaded images from Cloudinary
                     for (const img of uploadedImages) {
                         await cloudinary.uploader.destroy(img.image_url);
                     }
@@ -47,7 +43,6 @@ const addProduct = async (req, res) => {
             }
         }
 
-        // Commit transaction
         await transaction.commit();
         await redisClient.del(`allProducts`);
         return res.status(201).json({ message: "Product added successfully", product });
@@ -55,7 +50,6 @@ const addProduct = async (req, res) => {
     } catch (error) {
         console.error("Error adding product:", error);
 
-        // Rollback transaction if any error occurs
         await transaction.rollback();
 
         return res.status(500).json({ error: "Internal Server Error" });
@@ -104,41 +98,35 @@ const getProductById = async (req, res) => {
 };
 
 const updateProduct = async (req, res) => {
-    const transaction = await sequelize.transaction(); // Start transaction
+    const transaction = await sequelize.transaction();
 
     try {
         const { name, description, category, price } = req.body;
         const productId = req.params.id;
 
-        // Validate input
         if (!name || !description || !category || !price) {
             return res.status(400).json({ error: "All fields are required." });
         }
 
-        // Fetch the product
         const product = await Product.findByPk(productId);
         if (!product) {
             return res.status(404).json({ error: "Product not found" });
         }
 
-        // Update product details
         await Product.update(
             { name, description, category, price },
             { where: { id: productId }, transaction }
         );
 
-        // Remove old images from Cloudinary
         const oldImages = await Image.findAll({ where: { product_id: productId }, transaction });
 
         for (const img of oldImages) {
-            const publicId = img.image_url.split("/").pop().split(".")[0]; // Extract Cloudinary Public ID
-            await cloudinary.uploader.destroy(publicId); // Delete from Cloudinary
+            const publicId = img.image_url.split("/").pop().split(".")[0];
+            await cloudinary.uploader.destroy(publicId);
         }
 
-        // Delete old images from DB
         await Image.destroy({ where: { product_id: productId }, transaction });
 
-        // Handle new image uploads
         const uploadedImages = [];
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
@@ -154,7 +142,6 @@ const updateProduct = async (req, res) => {
                 } catch (uploadError) {
                     console.error("Cloudinary upload failed:", uploadError);
                     
-                    // Cleanup: Delete already uploaded images from Cloudinary
                     for (const img of uploadedImages) {
                         const publicId = img.image_url.split("/").pop().split(".")[0];
                         await cloudinary.uploader.destroy(publicId);
@@ -176,7 +163,7 @@ const updateProduct = async (req, res) => {
 
     } catch (error) {
         console.error("Error updating product:", error);
-        await transaction.rollback(); // Rollback transaction on failure
+        await transaction.rollback();
         return res.status(500).json({ error: "Internal Server Error" });
     }
 };
@@ -186,28 +173,22 @@ const deleteProduct = async (req, res) => {
     try {
         const productId = req.params.id;
 
-        // Fetch the product
         const product = await Product.findByPk(productId);
         if (!product) {
             return res.status(404).json({ error: "Product not found" });
         }
 
-        // Find associated images (No need for transaction in findAll)
         const oldImages = await Image.findAll({ where: { product_id: productId } });
         
-        // Delete images from Cloudinary
         for (const img of oldImages) {
-            const publicId = img.image_url.split("/").pop().split(".")[0]; // Extract Cloudinary Public ID
+            const publicId = img.image_url.split("/").pop().split(".")[0];
             await cloudinary.uploader.destroy(publicId);
         }
 
-        // Delete images from DB
         await Image.destroy({ where: { product_id: productId }, transaction });
 
-        // Delete the product
         await Product.destroy({ where: { id: productId }, transaction });
 
-        // Commit transaction
         await transaction.commit();
 
         await redisClient.del(`allProducts`);
@@ -220,7 +201,7 @@ const deleteProduct = async (req, res) => {
 
     } catch (error) {
         console.error("Error deleting product:", error);
-        await transaction.rollback(); // Rollback transaction on failure
+        await transaction.rollback();
         return res.status(500).json({ error: "Internal Server Error" });
     }
 };

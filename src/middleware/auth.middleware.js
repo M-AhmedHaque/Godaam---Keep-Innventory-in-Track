@@ -12,56 +12,21 @@ export const verifyJWT = async (req, res, next) => {
         const userId = decoded.id;
         const userSession = await redisClient.get(`session:${userId}`);
         if (userSession) {
-            req.user = JSON.parse(userSession); // Use cached session data
+            req.user = JSON.parse(userSession);
         } else {
-            // If not found in Redis, fetch from DB and store in Redis
             const user = await User.findByPk(userId, { attributes: { exclude: ["password"] } });
 
             if (!user) {
                 return res.status(404).json({ success: false, message: "User not found" });
             }
 
-            await redisClient.set(`session:${userId}`, JSON.stringify(user), "EX", 3600); // Cache for 1 hour
+            await redisClient.set(`session:${userId}`, JSON.stringify(user), "EX", 3600);
             req.user = user;
         }
-        // req.user = await User.findByPk(decoded.id, { attributes: { exclude: ["password"] } });
-
-        // if (!req.user) {
-        //     return res.status(404).json({ success: false, message: "User not found" });
-        // }
+        
 
         next();
     } catch (error) {
         res.status(403).json({ message: "Invalid access token" });
     }
 };
-
-
-// export const verifyjwt = async (req, res, next) => {
-//     try {
-//         const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "");
-
-//         if (!token) {
-//             return res.status(401).json({ success: false, message: "Unauthorized request. No token provided." });
-//         }
-
-//         let decodedToken;
-//         try {
-//             decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-//         } catch (err) {
-//             return res.status(401).json({ success: false, message: "Invalid or expired access token." });
-//         }
-
-//         const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
-
-//         if (!user) {
-//             return res.status(403).json({ success: false, message: "User not found. Access denied." });
-//         }
-
-//         req.user = user;
-//         next();
-//     } catch (error) {
-//         console.error("JWT Verification Error:", error.message);
-//         res.status(500).json({ success: false, message: "Internal Server Error" });
-//     }
-// };

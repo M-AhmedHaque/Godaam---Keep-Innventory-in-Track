@@ -13,24 +13,6 @@ import AuditLog from "./auditLog.model.js";
 User.hasMany(AuditLog, { foreignKey: "user_id", onDelete: "CASCADE" });
 AuditLog.belongsTo(User, { foreignKey: "user_id" });
 
-// User.hasMany(Store, { foreignKey: "owner_id" });
-// Store.belongsTo(User, { foreignKey: "owner_id" });
-
-// User.belongsToMany(Store, { through: UserStore });
-// Store.belongsToMany(User, { through: UserStore });
-
-// Store.hasMany(Stock, { foreignKey: "store_id" });
-// Stock.belongsTo(Store, { foreignKey: "store_id" });
-
-// Product.hasMany(Stock, { foreignKey: "product_id" });
-// Stock.belongsTo(Product, { foreignKey: "product_id" });
-
-// Store.hasMany(StockMovement, { foreignKey: "store_id" });
-// StockMovement.belongsTo(Store, { foreignKey: "store_id" });
-
-// Product.hasMany(StockMovement, { foreignKey: "product_id" });
-// StockMovement.belongsTo(Product, { foreignKey: "product_id" });
-
 Product.hasMany(StockMovement, { foreignKey: "product_id", onDelete: "CASCADE" });
 Store.hasMany(StockMovement, { foreignKey: "store_id", onDelete: "CASCADE" });
 User.hasMany(StockMovement, { foreignKey: "user_id", onDelete: "CASCADE" });

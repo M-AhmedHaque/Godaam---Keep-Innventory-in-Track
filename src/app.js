@@ -2,11 +2,8 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import http from "http"
-// const http = require("http");
-// const { Server } = require("socket.io");
 import { Server } from "socket.io";
 import { stockSocket } from "./socket/stockSocket.js";
-// import stockSocket from "./socket/stockSocket.js";
 import stockRoutes from "./routes/stock.route.js"
 import authRoutes from "./routes/auth.route.js"
 import userRoutes from "./routes/user.routes.js"
@@ -48,4 +45,4 @@ app.get("/api/v2/audit-logs", async (req, res) => {
     }
   });
 
-export default app; // Use default export
+export default app;

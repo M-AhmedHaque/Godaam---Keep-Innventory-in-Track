@@ -4,12 +4,7 @@ import Product from "./product.model.js";
 import Store from "./store.model.js";
 import Sequelize from "sequelize";
 import Supplier from "./supplier.model.js";
-// const Stock = sequelize.define("Stock", {
-//     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-//     store_id: { type: DataTypes.INTEGER, references: { model: Store, key: "id" }, onDelete: "CASCADE" },
-//     product_id: { type: DataTypes.INTEGER, references: { model: Product, key: "id" }, onDelete: "CASCADE" },
-//     quantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 }
-//   }, { timestamps: true, indexes: [{ unique: true, fields: ["store_id", "product_id"] }] });
+
 const StoreStock = sequelize.define("StoreStock", {
   store_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Store, key: "id" }, onDelete: "CASCADE", primaryKey: true },
   product_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: Product, key: "id" }, onDelete: "CASCADE", primaryKey: true },
@@ -19,6 +14,7 @@ const StoreStock = sequelize.define("StoreStock", {
   total_stock: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   last_updated: { type: DataTypes.DATE, defaultValue: Sequelize.NOW }
 }, { timestamps: false });
+
 StoreStock.addHook("beforeUpdate", async (storeStock) => {
   const oldStock = await StoreStock.findOne({
     where: { product_id: storeStock.product_id, store_id: storeStock.store_id },
@@ -28,7 +24,7 @@ StoreStock.addHook("beforeUpdate", async (storeStock) => {
     entity_type: "StoreStock",
     entity_id: storeStock.product_id,
     action: "UPDATE",
-    user_id: 1, // Assign dynamically
+    user_id: 1,
     old_value: oldStock.toJSON(),
     new_value: storeStock.toJSON(),
   });

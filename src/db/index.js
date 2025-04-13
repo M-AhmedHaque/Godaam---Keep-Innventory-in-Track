@@ -1,36 +1,30 @@
-// const { Sequelize } = require("sequelize");
 import Sequelize from "sequelize";
 import dotenv from "dotenv";
 
 dotenv.config();
-// const sequelize = new Sequelize(process.env.DB_NAME, process.env.DB_USER, process.env.DB_PASSWORD, {
-//   host: "localhost",
-//   dialect: "postgres",
-//   logging: false,
-// });
 const sequelize = new Sequelize({
   dialect: 'postgres',
   replication: {
     read: [
       {
-        host: 'localhost', // same host
+        host: 'localhost',
         username: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME, // same DB
+        database: process.env.DB_NAME,
       },
     ],
     write: {
-        host: 'localhost', // same host
+        host: 'localhost',
         username: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME, // same DB
+        database: process.env.DB_NAME,
     },
   },
   pool: {
     max: 10,
     idle: 30000,
   },
-  logging: console.log, // shows which operations go to which side
+  logging: console.log,
 });
 
 sequelize
@@ -40,22 +34,3 @@ sequelize
 
 export default sequelize
 
-// import dotenv from "dotenv";
-// import pkg from "pg"; 
-// const { Pool } = pkg; 
-
-// dotenv.config();
-
-// const pool = new Pool({
-//     user: process.env.DB_USER,
-//     host: process.env.DB_HOST,
-//     database: process.env.DB_NAME,
-//     password: process.env.DB_PASSWORD,
-//     port: process.env.DB_PORT,
-// });
-
-// pool.connect()
-//     .then(() => console.log("Connected to PostgreSQL"))
-//     .catch(err => console.error("Connection error", err));
-
-// export { pool };

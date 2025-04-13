@@ -4,7 +4,6 @@ import SupplierProduct from "../models/supplier_product.js";
 import sequelize from "../db/index.js";
 import redisClient from "../config/redis.js";
 const CACHE_EXPIRATION = 600;
-// add supplier
 const addSupplier = async (req, res) => {
     const transaction = await sequelize.transaction();
 

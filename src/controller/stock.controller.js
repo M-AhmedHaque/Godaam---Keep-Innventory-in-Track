@@ -1,4 +1,3 @@
-// const { StoreStock, StockMovement, Store, Product, User } = require("../models");
 import StoreStock from "../models/store_stock.model.js";
 import StockMovement from "../models/stockMovement.model.js";
 import Store from "../models/store.model.js";
@@ -6,7 +5,6 @@ import Product from "../models/product.model.js";
 import sequelize from "../db/index.js";
 import redisClient from "../config/redis.js";
 
-// Utility function to invalidate cache
 const invalidateCache = (key) => {
     redisClient.del(key, (err, response) => {
         if (err) console.error("Redis Cache Invalidation Error:", err);
@@ -22,7 +20,6 @@ const handleStockMovement = async (data) => {
         stock = await StoreStock.create({ product_id, store_id, supplier_id, quantity: 0, selling_price: 0, total_stock: 0 });
     }
 
-    // Update stock based on movement type
     if (movement_type === "stock_in") {
         stock.quantity += quantity;
         stock.total_stock += quantity;
@@ -37,7 +34,6 @@ const handleStockMovement = async (data) => {
 
     await stock.save();
 
-    // Log stock movement
     await StockMovement.create({
         product_id,
         store_id,
@@ -50,7 +46,6 @@ const handleStockMovement = async (data) => {
     return { product_id, store_id, supplier_id, quantity, movement_type, updated_quantity: stock.quantity };
 };
 
-// Add stock to a store
 const addStock = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
@@ -62,11 +57,9 @@ const addStock = async (req, res) => {
             return res.status(404).json({ success: false, message: "Product or Store not found" });
         }
 
-        // Fetch purchase price from SupplierProduct
         const supplierProduct = await SupplierProduct.findOne({ where: { supplier_id, product_id }, transaction });
         const purchase_price = supplierProduct ? supplierProduct.cost_price : 0;
 
-        // Ensure StoreStock entry includes supplier_id
         let stock = await StoreStock.findOne({ where: { store_id, product_id, supplier_id }, transaction });
         if (!stock) {
             stock = await StoreStock.create({ store_id, product_id, supplier_id, quantity, selling_price, total_stock: quantity }, { transaction });
@@ -77,17 +70,24 @@ const addStock = async (req, res) => {
             await stock.save({ transaction });
         }
 
-        // Log stock movement with purchase price
         await StockMovement.create({
             product_id, store_id, supplier_id, user_id,
             quantity, movement_type: "stock_in",
             movement_date: new Date(),
-            purchase_price, //  Now tracking purchase price
+            purchase_price,
             notes
         }, { transaction });
 
         await transaction.commit();
-        invalidateCache("stockMovements");
+        emitStockUpdate({
+            product_id,
+            store_id,
+            supplier_id,
+            movement_type: "stock_in",
+            updated_quantity: stock.quantity,
+            cacheKeys: [`stockMovements`, `stockMovements:${store_id}:all:all`, `stockMovements:${store_id}:${product_id}:stock_in`]
+          });
+
         res.status(201).json({ success: true, message: "Stock added successfully", data: stock });
 
     } catch (error) {
@@ -96,8 +96,6 @@ const addStock = async (req, res) => {
     }
 };
 
-
-// Process a sale (reduce stock)
 const saleStock = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
@@ -107,7 +105,6 @@ const saleStock = async (req, res) => {
             return res.status(400).json({ success: false, message: "Insufficient stock" });
         }
 
-        // Fetch last purchase price for cost calculation
         const lastPurchase = await StockMovement.findOne({
             where: { product_id, store_id, movement_type: "stock_in" },
             order: [["movement_date", "DESC"]],
@@ -124,12 +121,27 @@ const saleStock = async (req, res) => {
             product_id, store_id, user_id,
             quantity, movement_type: "sale",
             movement_date: new Date(),
-            purchase_price, // ✅ Now tracking cost for profit calculation
+            purchase_price,
             notes
         }, { transaction });
 
         await transaction.commit();
-        invalidateCache("stockMovements");
+        emitStockUpdate({
+            product_id,
+            store_id,
+            supplier_id,
+            movement_type: "sale",
+            updated_quantity: stock.quantity,
+            cacheKeys: [`stockMovements`, `stockMovements:${store_id}:all:all`, `stockMovements:${store_id}:${product_id}:stock_in`]
+          });
+        // Emit stock update to clients in real-time
+        // io.emit("stockUpdated", {
+        //     product_id,
+        //     store_id,
+        //     supplier_id,
+        //     movement_type: "stock_in",
+        //     updated_quantity: stock.quantity,
+        // });
         res.status(200).json({ success: true, message: "Sale recorded successfully", data: stock });
 
     } catch (error) {
@@ -138,7 +150,6 @@ const saleStock = async (req, res) => {
     }
 };
 
-// Remove stock manually (damage, expiry, etc.)
 const removeStock = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
@@ -149,7 +160,6 @@ const removeStock = async (req, res) => {
             return res.status(400).json({ success: false, message: "Insufficient stock" });
         }
 
-        // Fetch last purchase price for cost tracking
         const lastPurchase = await StockMovement.findOne({
             where: { product_id, store_id, movement_type: "stock_in" },
             order: [["movement_date", "DESC"]],
@@ -172,6 +182,22 @@ const removeStock = async (req, res) => {
         }, { transaction });
 
         await transaction.commit();
+        emitStockUpdate({
+            product_id,
+            store_id,
+            supplier_id,
+            movement_type: "removal",
+            updated_quantity: stock.quantity,
+            cacheKeys: [`stockMovements`, `stockMovements:${store_id}:all:all`, `stockMovements:${store_id}:${product_id}:stock_in`]
+          });
+        // Emit stock update to clients in real-time
+        // io.emit("stockUpdated", {
+        //     product_id,
+        //     store_id,
+        //     supplier_id,
+        //     movement_type: "stock_in",
+        //     updated_quantity: stock.quantity,
+        // });
         res.status(200).json({ success: true, message: "Stock removed successfully", data: stock });
 
     } catch (error) {
@@ -226,7 +252,6 @@ const returnStockToSupplier = async (req, res) => {
             return res.status(400).json({ error: "Insufficient stock to return." });
         }
 
-        // Fetch last purchase price
         const lastPurchase = await StockMovement.findOne({
             where: { product_id: productId, store_id: storeId, supplier_id: supplierId, movement_type: "stock_in" },
             order: [["movement_date", "DESC"]],
@@ -235,7 +260,6 @@ const returnStockToSupplier = async (req, res) => {
 
         const purchase_price = lastPurchase ? lastPurchase.purchase_price : 0;
 
-        // Create stock movement entry
         await StockMovement.create({
             product_id: productId,
             store_id: storeId,
@@ -248,11 +272,18 @@ const returnStockToSupplier = async (req, res) => {
             notes: reason,  
         }, { transaction });
 
-        // Update stock quantity
         stock.quantity -= quantity;
         await stock.save({ transaction });
 
         await transaction.commit();
+        emitStockUpdate({
+            product_id:productId,
+            store_id:storeId,
+            supplier_id:supplierId,
+            movement_type: "return_to_supplier",
+            updated_quantity: stock.quantity,
+            cacheKeys: [`stockMovements`, `stockMovements:${store_id}:all:all`, `stockMovements:${store_id}:${product_id}:stock_in`]
+          });
         return res.status(200).json({ message: "Stock returned successfully." });
 
     } catch (error) {
